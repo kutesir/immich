@@ -1,0 +1,91 @@
+version: "3.8"
+
+services:
+  immich-redis:
+    image: redis
+    container_name: Immich-REDIS
+    hostname: immich-redis
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+    user: 999:10
+    environment:
+      - TZ=Africa/Nairobi
+    volumes:
+      - ./volumes/redis:/data:rw
+    restart: on-failure:5
+    networks:
+      - immich-net
+
+  immich-db:
+    image: tensorchord/pgvecto-rs:pg16-v0.2.0
+    container_name: Immich-DB
+    hostname: immich-db
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-d", "immich", "-U", "immichuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./volumes/db:/var/lib/postgresql/data:rw
+    environment:
+      - TZ=Africa/Nairobi
+      - POSTGRES_DB=immich
+      - POSTGRES_USER=immichuser
+      - POSTGRES_PASSWORD=immichpw
+    restart: on-failure:5
+    networks:
+      - immich-net
+
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    container_name: Immich-SERVER
+    hostname: immich-server
+    user: 999:10
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - stack.env
+    ports:
+      - 8212:2283
+    volumes:
+      - ./media:/usr/src/app/upload:rw
+    environment:
+      - TZ=Africa/Nairobi
+    restart: on-failure:5
+    depends_on:
+      immich-redis:
+        condition: service_healthy
+      immich-db:
+        condition: service_started
+    networks:
+      - immich-net
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: Immich-LEARNING
+    hostname: immich-machine-learning
+    user: 999:10
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - stack.env
+    volumes:
+      - ./media:/usr/src/app/upload:rw
+      - ./volumes/cache:/cache:rw
+      - ./volumes/matplotlib:/matplotlib:rw
+    environment: 
+      - TZ=Africa/Nairobi
+      - MPLCONFIGDIR=/matplotlib
+    restart: on-failure:5
+    depends_on:
+      immich-db:
+        condition: service_started
+    networks:
+      - immich-net
+
+networks:
+  immich-net:
